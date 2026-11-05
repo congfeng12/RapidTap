@@ -396,7 +396,7 @@ final class MainViewController: NSViewController {
                                           title: "触发模式",
                                           trailing: [self.modeControl])
 
-        self.triggerHintLabel.stringValue = "触发键会被全局拦截，不会传给当前应用；建议使用 F6–F12 等不常用按键。"
+        self.triggerHintLabel.stringValue = "普通按键会被全局拦截，不再传给当前应用；⌘⌥⌃⇧ 等修饰键不会被拦截，仍可正常组合使用，建议配合「按住连点」。"
         self.triggerHintLabel.font = .systemFont(ofSize: 11)
         self.triggerHintLabel.textColor = .tertiaryLabelColor
         self.configureWrapping(self.triggerHintLabel)
@@ -901,7 +901,7 @@ final class MainViewController: NSViewController {
         }
 
         self.settings.update { $0.triggerKeyCode = code }
-        self.triggerHintLabel.stringValue = "触发键会被全局拦截，不会传给当前应用；建议使用 F6–F12 等不常用按键。"
+        self.triggerHintLabel.stringValue = "普通按键会被全局拦截，不再传给当前应用；⌘⌥⌃⇧ 等修饰键不会被拦截，仍可正常组合使用，建议配合「按住连点」。"
         self.triggerHintLabel.textColor = .tertiaryLabelColor
         self.refreshTriggerDisplay()
         self.refreshRuntime()

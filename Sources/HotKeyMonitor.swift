@@ -53,8 +53,10 @@ final class HotKeyMonitor {
         if isActive { return true }
         guard AXIsProcessTrusted() else { return false }
 
+        // 修饰键（⌘⌥⌃⇧、Caps Lock、Fn）不会产生 keyDown/keyUp，而是 flagsChanged
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
             | CGEventMask(1 << CGEventType.keyUp.rawValue)
+            | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
 
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -109,6 +111,11 @@ final class HotKeyMonitor {
 
         let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
 
+        // 修饰键单独处理，并且不吞事件
+        if type == .flagsChanged {
+            return self.handleModifierEvent(code: code, event: event)
+        }
+
         // 录制期间吞掉按键，避免误输入到前台应用
         if isRecording && type == .keyDown {
             stateLock.lock()
@@ -139,6 +146,58 @@ final class HotKeyMonitor {
         }
         // 命中的触发键不再传给前台应用
         return nil
+    }
+}
+
+// MARK: - 修饰键
+
+extension HotKeyMonitor {
+
+    /// 处理 ⌘⌥⌃⇧ / Caps Lock / Fn 的状态变化
+    ///
+    /// 修饰键事件始终放行：吞掉修饰键会导致系统和前台应用丢失按键状态，
+    /// 例如 ⌘ 被吞后所有 ⌘ 组合键都会失效。
+    fileprivate func handleModifierEvent(code: UInt16, event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard let flag = HotKeyMonitor.modifierFlag(for: code) else {
+            return Unmanaged.passUnretained(event)
+        }
+        let pressed = event.flags.contains(flag)
+
+        if self.isRecording {
+            if pressed {
+                self.stateLock.lock()
+                self.recording = false
+                self.stateLock.unlock()
+                DispatchQueue.main.async { [weak self] in
+                    self?.onKeyCaptured?(code)
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        if code == Settings.shared.current.triggerKeyCode {
+            DispatchQueue.main.async { [weak self] in
+                if pressed {
+                    self?.onTriggerDown?()
+                } else {
+                    self?.onTriggerUp?()
+                }
+            }
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
+    /// 修饰键键码 → 对应的 CGEventFlags
+    fileprivate static func modifierFlag(for code: UInt16) -> CGEventFlags? {
+        switch code {
+        case 54, 55: return .maskCommand
+        case 56, 60: return .maskShift
+        case 58, 61: return .maskAlternate
+        case 59, 62: return .maskControl
+        case 57: return .maskAlphaShift
+        case 63: return .maskSecondaryFn
+        default: return nil
+        }
     }
 }
 

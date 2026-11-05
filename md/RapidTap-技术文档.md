@@ -88,6 +88,10 @@ CGEvent.tapCreate(tap: .cgSessionEventTap,
 - 回调必须是 C 函数指针，不能捕获上下文，实例通过 `refcon`（`Unmanaged.passUnretained(self).toOpaque()`）取回。
 - 过滤 `keyboardEventAutorepeat != 0`，避免长按触发键时系统重复事件把"切换模式"反复启停。
 - 监听可能被系统因超时/用户输入禁用（`tapDisabledByTimeout` / `tapDisabledByUserInput`），回调里需要重新 `tapEnable`。
+- **修饰键**（⌘⌥⌃⇧ / Caps Lock / Fn）不产生 `keyDown`/`keyUp`，而是 `flagsChanged`，所以 tap 掩码必须额外包含 `flagsChanged`，否则这类按键完全收不到（表现为"无法识别 Option / Command"）。
+  修饰键处理有两点与普通键不同：
+  1. **永不吞事件**：修饰键的状态是系统级共享的，吞掉会让前台应用和系统都收不到（例如 ⌘ 被吞后所有 ⌘ 组合键失效）；
+  2. **按下/抬起用 flags 判断**：`flagsChanged` 的键码标识是哪个修饰键，`event.flags` 是否包含对应掩码表示按下还是抬起（Caps Lock 为切换语义）。
 - 录制模式下吞掉所有 `keyDown`，避免按键误输入到前台应用；`Esc`（键码 53）作为取消。
 
 ### 5.2 连点引擎
@@ -237,6 +241,7 @@ TCC 以代码签名的「指定要求」识别应用：
 | 环境诊断 | `RapidTap --diagnose` | 权限已授权、事件监听可创建、HID 事件源可用 |
 | 端到端点击 | 独立测试窗口（floating）+ 自动发送 F6 启停，统计收到的 `mouseDown` | 2.4 秒收到 26 次（设定 12 次/秒，拟人化后约 11 cps），停止后不再计数 |
 | 触发键录制 | 界面「重新设置」后按 Tab | 配置写入 `triggerKeyCode = 48`，界面显示 Tab，重启后保持 |
+| 修饰键触发 | 录制 Option（58）与 Command（55），各按住 1~1.2 秒 | 配置正确写入 58 / 55，界面显示 Option / Command；按住期间分别点击 8 次、5 次，松开立即停止 |
 | 参数持久化 | 调整频率/模式/坐标抖动后重启 | 全部保持（6 次/秒、按住模式、坐标抖动开启） |
 | 窗口布局 | 多屏（内置 2056×1329 + MateView 2560×1707） | 在鼠标所在屏居中，520pt 宽，无约束警告 |
 | 授权持久化 | 连续两次 `./build.sh` 后比对 `codesign -d -r-` | 指定要求完全一致；重启应用仍显示「已授权」 |
