@@ -7,13 +7,33 @@
 - 已在本机验证：macOS 27.2（Darwin 27.2.0）+ Apple Silicon（arm64）
 - 目标最低系统：macOS 13.0
 
+<p align="center">
+  <img src="md/images/ui-light.png" width="45%" alt="浅色模式">
+  <img src="md/images/ui-dark.png" width="45%" alt="深色模式">
+</p>
+
+---
+
+## 快速开始
+
+```bash
+git clone https://github.com/congfeng12/RapidTap.git
+cd RapidTap
+./build.sh      # 编译并打包成 RapidTap.app
+./run.sh        # 启动
+```
+
+首次启动需要在 **系统设置 → 隐私与安全性 → 辅助功能** 中勾选 `RapidTap`（否则只能看到界面、无法拦截按键和模拟点击），授权后界面顶部会变绿。
+
+接着点「重新设置」录一个触发键（建议 `F6`–`F12`），选好模式与频率，按触发键即可开始连点。完整说明见下文。
+
 ---
 
 ## 功能
 
 | 能力 | 说明 |
 |------|------|
-| 全局触发键 | 任意按键，界面上「重新录制」后按下即可设置（默认 `F6`） |
+| 全局触发键 | 任意按键，界面上「重新设置」后按下即可设置（默认 `F6`） |
 | 触发键拦截 | 命中触发键时事件被吞掉，不会传给前台应用/游戏 |
 | 两种模式 | **按住连点**：按住触发键才连点；**按一下切换**：按一下开始、再按一下停止 |
 | 连点频率 | 1 ~ 60 次/秒，实时显示对应间隔毫秒数 |
@@ -28,7 +48,7 @@
 
 ## 界面
 
-按 macOS「系统设置」的分组表单规范设计：
+按 macOS「系统设置」的分组表单规范设计（效果见上方截图）：
 
 - 灰底（`underPageBackgroundColor`）+ 白色圆角卡片分组，层级清晰；
 - 自动跟随浅色 / 深色模式和系统强调色；也内置主题切换（浅色 / 深色 / 跟随系统），可覆盖系统偏好；
@@ -173,6 +193,8 @@ RapidTap/
 │   ├── AppDelegate.swift        # 窗口/菜单生命周期，退出时释放监听
 │   ├── MainViewController.swift # 界面、交互、权限引导
 │   ├── Config.swift             # 配置模型 + 线程安全持久化
+│   ├── Theme.swift              # 浅色 / 深色 / 跟随系统
+│   ├── LaunchAtLogin.swift      # 开机自启动（SMAppService）
 │   ├── ClickEngine.swift        # 连点线程与鼠标事件注入
 │   ├── HotKeyMonitor.swift      # CGEventTap 全局按键监听/拦截
 │   ├── KeyNames.swift           # 虚拟键码 → 名称
@@ -181,9 +203,12 @@ RapidTap/
 │   ├── Info.plist
 │   ├── AppIcon.png              # 1024x1024 透明主图标（内容占比 83%）
 │   └── AppIcon.icns             # 打包进 .app 的图标
+├── md/
+│   ├── RapidTap-技术文档.md      # 架构、界面规范、验证记录
+│   └── images/                  # README 截图
 ├── build.sh
 ├── run.sh
-├── md/                          # 技术文档
+├── setup-signing.sh             # 创建本地稳定签名身份（可选，只需一次）
 └── RapidTap.app                 # 构建产物（可删除后重新生成）
 ```
 
