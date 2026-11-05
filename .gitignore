@@ -1,5 +1,6 @@
 # 构建产物
 RapidTap.app/
+RapidTap-*.zip
 *.o
 *.dSYM/
 
