@@ -187,6 +187,13 @@ final class MainViewController: NSViewController {
                                                   action: nil)
     private let launchAtLoginSwitch = NSSwitch()
     private let launchAtLoginSubtitle = NSTextField(labelWithString: "登录后自动打开")
+
+    // 软件更新
+    private let updateSubtitleLabel = NSTextField(labelWithString: "")
+    private let updateButton = NSButton(title: "检查更新", target: nil, action: nil)
+    private var availableUpdate: UpdateInfo?
+    private var isCheckingUpdate = false
+    private var didAutoCheckUpdate = false
     private var jitterBlockView: NSView?
 
     // 状态
@@ -238,6 +245,16 @@ final class MainViewController: NSViewController {
         self.refreshTriggerDisplay()
         self.refreshRuntime()
         self.promptPermissionIfNeeded()
+        self.autoCheckUpdatesIfNeeded()
+    }
+
+    /// 每次启动后自动检查一次更新（静默，不打断用户）
+    private func autoCheckUpdatesIfNeeded() {
+        guard !self.didAutoCheckUpdate else { return }
+        self.didAutoCheckUpdate = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.checkForUpdates()
+        }
     }
 
     override func viewDidLayout() {
@@ -469,7 +486,18 @@ final class MainViewController: NSViewController {
                                            subtitleLabel: self.launchAtLoginSubtitle,
                                            trailing: [self.launchAtLoginSwitch])
 
-        return self.makeCard(rows: [themeRow, loginRow])
+        self.updateSubtitleLabel.font = .systemFont(ofSize: 11)
+        self.updateSubtitleLabel.textColor = .secondaryLabelColor
+        self.updateSubtitleLabel.stringValue = "当前版本 \(UpdateService.shared.currentVersion)"
+        self.updateButton.controlSize = .regular
+        self.updateButton.bezelStyle = .rounded
+
+        let updateRow = self.makeSettingRow(symbol: "arrow.triangle.2.circlepath",
+                                            title: "软件更新",
+                                            subtitleLabel: self.updateSubtitleLabel,
+                                            trailing: [self.updateButton])
+
+        return self.makeCard(rows: [themeRow, loginRow, updateRow])
     }
 
     private func makeStatusCard() -> NSView {
@@ -736,6 +764,9 @@ final class MainViewController: NSViewController {
         self.launchAtLoginSwitch.target = self
         self.launchAtLoginSwitch.action = #selector(self.launchAtLoginChanged)
 
+        self.updateButton.target = self
+        self.updateButton.action = #selector(self.updateButtonClicked)
+
         self.toggleButton.target = self
         self.toggleButton.action = #selector(self.toggleRunning)
     }
@@ -849,6 +880,85 @@ final class MainViewController: NSViewController {
             self.launchAtLoginSubtitle.textColor = .systemRed
         }
         self.refreshLaunchAtLogin()
+    }
+
+    @objc private func updateButtonClicked(_ sender: Any) {
+        guard !self.isCheckingUpdate else { return }
+        if let update = self.availableUpdate {
+            self.installUpdate(update)
+        } else {
+            self.checkForUpdates()
+        }
+    }
+
+    /// 检查更新（启动时静默调用，也可由按钮触发）
+    private func checkForUpdates() {
+        guard !self.isCheckingUpdate else { return }
+        self.isCheckingUpdate = true
+        self.updateButton.isEnabled = false
+        self.updateButton.title = "检查中…"
+        self.updateSubtitleLabel.textColor = .secondaryLabelColor
+        self.updateSubtitleLabel.stringValue = "正在检查更新…"
+
+        UpdateService.shared.check { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isCheckingUpdate = false
+                self.updateButton.isEnabled = true
+
+                switch result {
+                case .success(let info):
+                    if let info = info {
+                        self.availableUpdate = info
+                        self.updateSubtitleLabel.stringValue = "发现新版本 \(info.tag)（当前 \(UpdateService.shared.currentVersion)）"
+                        self.updateSubtitleLabel.textColor = .systemOrange
+                        self.updateButton.title = "更新到 \(info.tag)"
+                        self.updateButton.bezelColor = .controlAccentColor
+                    } else {
+                        self.availableUpdate = nil
+                        self.updateSubtitleLabel.stringValue = "已是最新版本（\(UpdateService.shared.currentVersion)）"
+                        self.updateSubtitleLabel.textColor = .secondaryLabelColor
+                        self.updateButton.title = "检查更新"
+                        self.updateButton.bezelColor = nil
+                    }
+
+                case .failure(let error):
+                    self.availableUpdate = nil
+                    self.updateSubtitleLabel.stringValue = "检查失败：\(error.localizedDescription)"
+                    self.updateSubtitleLabel.textColor = .systemRed
+                    self.updateButton.title = "重试"
+                    self.updateButton.bezelColor = nil
+                }
+            }
+        }
+    }
+
+    /// 下载并安装更新
+    private func installUpdate(_ info: UpdateInfo) {
+        guard !self.isCheckingUpdate else { return }
+        self.isCheckingUpdate = true
+        self.updateButton.isEnabled = false
+        self.updateButton.title = "更新中…"
+        self.updateSubtitleLabel.textColor = .secondaryLabelColor
+        self.updateSubtitleLabel.stringValue = "正在下载 \(info.tag)…"
+
+        UpdateService.shared.downloadAndInstall(info, progress: { [weak self] message in
+            DispatchQueue.main.async {
+                self?.updateSubtitleLabel.stringValue = message
+            }
+        }, completion: { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if case .failure(let error) = result {
+                    self.isCheckingUpdate = false
+                    self.updateButton.isEnabled = true
+                    self.updateButton.title = "重试"
+                    self.updateButton.bezelColor = nil
+                    self.updateSubtitleLabel.stringValue = "更新失败：\(error.localizedDescription)"
+                    self.updateSubtitleLabel.textColor = .systemRed
+                }
+            }
+        })
     }
 
     @objc private func toggleRunning(_ sender: Any) {
