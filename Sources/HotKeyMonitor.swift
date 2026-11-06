@@ -20,6 +20,11 @@ final class HotKeyMonitor {
     private var runLoopSource: CFRunLoopSource?
     private(set) var isActive = false
 
+    /// 连点器总开关
+    /// 关闭时触发键直接放行、不做任何拦截，避免长期占用用户设置的按键。
+    /// 默认关闭：每次启动都需要用户手动开启。
+    var isEnabled = false
+
     private let stateLock = NSLock()
     private var recording = false
 
@@ -127,6 +132,11 @@ final class HotKeyMonitor {
             return nil
         }
 
+        // 连点器关闭时，触发键直接放行，避免长期占用
+        guard self.isEnabled else {
+            return Unmanaged.passUnretained(event)
+        }
+
         guard code == Settings.shared.current.triggerKeyCode,
               type == .keyDown || type == .keyUp else {
             return Unmanaged.passUnretained(event)
@@ -175,7 +185,7 @@ extension HotKeyMonitor {
             return Unmanaged.passUnretained(event)
         }
 
-        if code == Settings.shared.current.triggerKeyCode {
+        if self.isEnabled && code == Settings.shared.current.triggerKeyCode {
             DispatchQueue.main.async { [weak self] in
                 if pressed {
                     self?.onTriggerDown?()

@@ -211,7 +211,7 @@ final class SettingsViewController: NSViewController {
                                                title: "触发模式",
                                                trailing: [self.modeControl])
 
-        self.triggerHintLabel.stringValue = "普通按键会被全局拦截，不再传给当前应用；⌘⌥⌃⇧ 等修饰键不会被拦截，仍可正常组合使用，建议配合「按住连点」。"
+        self.triggerHintLabel.stringValue = "在主界面开启连点器后，普通按键会被全局拦截、不再传给当前应用；⌘⌥⌃⇧ 等修饰键不会被拦截，建议配合「按住连点」。"
         self.triggerHintLabel.font = .systemFont(ofSize: 11)
         self.triggerHintLabel.textColor = .tertiaryLabelColor
         UIBuilder.configureWrapping(self.triggerHintLabel,
@@ -402,7 +402,7 @@ final class SettingsViewController: NSViewController {
         }
 
         self.settings.update { $0.triggerKeyCode = code }
-        self.triggerHintLabel.stringValue = "普通按键会被全局拦截，不再传给当前应用；⌘⌥⌃⇧ 等修饰键不会被拦截，仍可正常组合使用，建议配合「按住连点」。"
+        self.triggerHintLabel.stringValue = "在主界面开启连点器后，普通按键会被全局拦截、不再传给当前应用；⌘⌥⌃⇧ 等修饰键不会被拦截，建议配合「按住连点」。"
         self.triggerHintLabel.textColor = .tertiaryLabelColor
         self.refreshTriggerDisplay()
     }

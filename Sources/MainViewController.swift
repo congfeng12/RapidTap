@@ -37,13 +37,13 @@ final class MainViewController: NSViewController {
     private let cursorJitterSwitch = NSSwitch()
     private var jitterBlockView: NSView?
 
-    // 运行状态
-    private let statusDot = StatusDotView()
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let countLabel = NSTextField(labelWithString: "")
-    private let toggleButton = NSButton(title: "开始连点", target: nil, action: nil)
-    private let playImage = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
-    private let stopImage = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
+    // 顶部控制卡
+    private let controlBadge = SymbolBadgeView(symbolName: "power",
+                                               tint: .tertiaryLabelColor,
+                                               side: 40)
+    private let controlTitleLabel = NSTextField(labelWithString: "连点器已关闭")
+    private let controlSubtitleLabel = NSTextField(labelWithString: "")
+    private let enableSwitch = NSSwitch()
 
     private var uiTimer: Timer?
     private var isSyncingUI = false
@@ -143,8 +143,8 @@ final class MainViewController: NSViewController {
         UIBuilder.addFullWidth(self.makeHeader(), to: root)
         UIBuilder.addFullWidth(self.makePermissionBanner(), to: root)
         UIBuilder.addFullWidth(self.makeUpdateBanner(), to: root)
+        UIBuilder.addFullWidth(self.makeControlCard(), to: root)
         UIBuilder.addFullWidth(self.makeClickCard(), to: root)
-        UIBuilder.addFullWidth(self.makeStatusCard(), to: root)
     }
 
     private func makeHeader() -> NSView {
@@ -280,45 +280,39 @@ final class MainViewController: NSViewController {
         return UIBuilder.makeCard(rows: [cpsBlock, humanizeRow, jitterBlock, cursorRow])
     }
 
-    private func makeStatusCard() -> NSView {
-        self.statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        self.statusLabel.textColor = .labelColor
+    /// 顶部控制卡：连点器总开关与实时状态
+    private func makeControlCard() -> NSView {
+        self.controlTitleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        self.controlTitleLabel.textColor = .labelColor
 
-        self.countLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        self.countLabel.textColor = .secondaryLabelColor
+        self.controlSubtitleLabel.font = .systemFont(ofSize: 11)
+        self.controlSubtitleLabel.textColor = .secondaryLabelColor
 
-        let topRow = NSStackView(views: [self.statusDot,
-                                         self.statusLabel,
-                                         UIBuilder.makeSpacer(),
-                                         self.countLabel])
-        topRow.orientation = .horizontal
-        topRow.alignment = .centerY
-        topRow.spacing = 8
-        topRow.translatesAutoresizingMaskIntoConstraints = false
+        let titles = NSStackView(views: [self.controlTitleLabel, self.controlSubtitleLabel])
+        titles.orientation = .vertical
+        titles.alignment = .leading
+        titles.spacing = 2
 
-        self.toggleButton.bezelStyle = .rounded
-        self.toggleButton.controlSize = .large
-        self.toggleButton.font = .systemFont(ofSize: 13, weight: .semibold)
-        self.toggleButton.bezelColor = .controlAccentColor
-        self.toggleButton.imagePosition = .imageLeading
-        self.toggleButton.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-        self.toggleButton.translatesAutoresizingMaskIntoConstraints = false
+        self.enableSwitch.controlSize = .large
+        self.enableSwitch.setAccessibilityLabel("启用连点器")
+
+        let row = NSStackView(views: [self.controlBadge,
+                                      titles,
+                                      UIBuilder.makeSpacer(),
+                                      self.enableSwitch])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
 
         let card = CardView()
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(topRow)
-        card.addSubview(self.toggleButton)
-
+        card.addSubview(row)
         NSLayoutConstraint.activate([
-            topRow.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: UIConstants.cardInset),
-            topRow.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -UIConstants.cardInset),
-            topRow.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
-
-            self.toggleButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: UIConstants.cardInset),
-            self.toggleButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -UIConstants.cardInset),
-            self.toggleButton.topAnchor.constraint(equalTo: topRow.bottomAnchor, constant: 10),
-            self.toggleButton.heightAnchor.constraint(equalToConstant: 32),
-            self.toggleButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14)
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14)
         ])
         return card
     }
@@ -349,8 +343,8 @@ final class MainViewController: NSViewController {
         self.cursorJitterSwitch.target = self
         self.cursorJitterSwitch.action = #selector(self.cursorJitterChanged)
 
-        self.toggleButton.target = self
-        self.toggleButton.action = #selector(self.toggleRunning)
+        self.enableSwitch.target = self
+        self.enableSwitch.action = #selector(self.enableChanged)
     }
 
     private func bindMonitor() {
@@ -419,12 +413,16 @@ final class MainViewController: NSViewController {
         self.settings.update { $0.cursorJitter = enabled }
     }
 
-    @objc private func toggleRunning(_ sender: Any) {
-        if self.engine.isRunning {
+    @objc private func enableChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+
+        let enabled = self.enableSwitch.state == .on
+        self.monitor.isEnabled = enabled
+        if enabled && !self.monitor.isActive {
+            _ = self.monitor.start()
+        }
+        if !enabled {
             self.engine.stop()
-        } else if !self.engine.start() {
-            NSSound.beep()
-            self.refreshPermission()
         }
         self.refreshRuntime()
     }
@@ -505,17 +503,28 @@ final class MainViewController: NSViewController {
     }
 
     private func refreshRuntime() {
+        let enabled = self.monitor.isEnabled
         let running = self.engine.isRunning
         let count = self.engine.clickCount
         let keyName = KeyNames.name(for: self.settings.current.triggerKeyCode)
 
-        self.statusDot.color = running ? .systemGreen : .tertiaryLabelColor
-        self.statusLabel.stringValue = running ? "运行中" : "未运行"
-        self.countLabel.stringValue = "已点击 \(count) 次"
+        if !enabled {
+            self.controlTitleLabel.stringValue = "连点器已关闭"
+            self.controlSubtitleLabel.stringValue = "触发键 \(keyName) · 关闭时不会被拦截"
+            self.controlBadge.tint = .systemRed
+        } else if running {
+            self.controlTitleLabel.stringValue = "连点中"
+            self.controlSubtitleLabel.stringValue = "触发键 \(keyName) · 已点击 \(count) 次"
+            self.controlBadge.tint = .systemGreen
+        } else {
+            self.controlTitleLabel.stringValue = "连点器已开启"
+            self.controlSubtitleLabel.stringValue = "触发键 \(keyName) · 已点击 \(count) 次"
+            self.controlBadge.tint = .systemGreen
+        }
 
-        self.toggleButton.title = running ? "停止连点（\(keyName)）" : "开始连点（\(keyName)）"
-        self.toggleButton.bezelColor = running ? .systemRed : .controlAccentColor
-        self.toggleButton.image = running ? self.stopImage : self.playImage
+        self.isSyncingUI = true
+        self.enableSwitch.state = enabled ? .on : .off
+        self.isSyncingUI = false
     }
 
     private func requestPermissionPrompt() {
