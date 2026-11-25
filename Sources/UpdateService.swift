@@ -200,6 +200,13 @@ final class UpdateService {
 
         try? fileManager.removeItem(at: workDir)
 
+        // 先关闭设置面板：macOS 在 sheet 打开时会忽略应用的退出请求
+        progress("正在重启…")
+        DispatchQueue.main.sync {
+            NotificationCenter.default.post(name: .rapidTapWillRelaunch, object: nil)
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+
         // 启动新版本并退出
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -208,6 +215,10 @@ final class UpdateService {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             NSApp.terminate(nil)
+            // 兜底：万一仍有模态状态拦截退出，强制结束旧进程
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                exit(0)
+            }
         }
     }
 

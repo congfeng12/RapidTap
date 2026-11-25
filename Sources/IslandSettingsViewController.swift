@@ -74,6 +74,11 @@ final class IslandSettingsViewController: NSViewController {
                                                name: UpdateManager.stateDidChange,
                                                object: nil)
 
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(self.prepareRelaunch),
+                                               name: .rapidTapWillRelaunch,
+                                               object: nil)
+
         let timer = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
             self?.refreshPermission()
         }
@@ -392,6 +397,12 @@ final class IslandSettingsViewController: NSViewController {
             UpdateManager.shared.install(info)
         } else {
             UpdateManager.shared.check()
+        }
+    }
+
+    @objc private func prepareRelaunch() {
+        if self.presentingViewController != nil {
+            self.dismiss(self)
         }
     }
 

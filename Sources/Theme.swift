@@ -41,6 +41,8 @@ enum UIStyle: String, Codable, CaseIterable {
 extension Notification.Name {
     /// 用户在设置里切换界面风格
     static let rapidTapStyleChanged = Notification.Name("rapidTapStyleChanged")
+    /// 更新即将重启，设置面板需要先关闭（sheet 打开时系统会忽略退出请求）
+    static let rapidTapWillRelaunch = Notification.Name("rapidTapWillRelaunch")
 }
 
 /// 主窗口根视图控制器需要提供内容高度，便于切换风格后重新定尺寸

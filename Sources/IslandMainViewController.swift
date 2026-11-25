@@ -48,6 +48,7 @@ final class IslandMainViewController: NSViewController, RootViewSizing {
     private var uiTimer: Timer?
     private var isSyncingUI = false
     private var didAutoCheckUpdate = false
+    private var isResizeScheduled = false
     private var isSettingsPresented = false
 
     // MARK: - 生命周期
@@ -98,15 +99,30 @@ final class IslandMainViewController: NSViewController, RootViewSizing {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        guard let window = self.view.window, let contentView = window.contentView else { return }
+        self.scheduleWindowResize()
+    }
 
-        let desired = self.preferredHeight
-        guard abs(contentView.frame.height - desired) > 0.5 else { return }
+    /// 内容高度变化时延后调整窗口尺寸
+    ///
+    /// 不能在 viewDidLayout 里直接改窗口 frame：此时 AppKit 正在显示周期内布局，
+    /// 再触发窗口尺寸变化会抛出 NSException（点击更新、横幅消失时必现）。
+    private func scheduleWindowResize() {
+        guard !self.isResizeScheduled else { return }
+        self.isResizeScheduled = true
 
-        // 保持窗口左上角不动地调整高度，避免每次布局都跳动
-        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        window.setContentSize(NSSize(width: IslandConstants.windowWidth, height: desired))
-        window.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - window.frame.height))
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.isResizeScheduled = false
+            guard let window = self.view.window, let contentView = window.contentView else { return }
+
+            let desired = self.preferredHeight
+            guard abs(contentView.frame.height - desired) > 0.5 else { return }
+
+            // 保持窗口左上角不动地调整高度，避免跳动
+            let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+            window.setContentSize(NSSize(width: IslandConstants.windowWidth, height: desired))
+            window.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - window.frame.height))
+        }
     }
 
     /// 内容理想高度（含上下留白），由 AppDelegate 用于初始化窗口尺寸
