@@ -16,12 +16,14 @@ struct Config: Codable {
     var pressDurationMs: Double = 35
     /// 是否让点击坐标产生亚像素抖动
     var cursorJitter: Bool = false
-    /// 外观主题：浅色 / 深色 / 跟随系统
+    /// 外观主题：浅色 / 深色 / 跟随系统（仅 Apple 风格生效）
     var theme: Theme = .system
+    /// 界面风格：Apple 系统风 / 动森风
+    var uiStyle: UIStyle = .apple
 
     private enum CodingKeys: String, CodingKey {
         case triggerKeyCode, holdToClick, clicksPerSecond, humanize
-        case jitterPercent, pressDurationMs, cursorJitter, theme
+        case jitterPercent, pressDurationMs, cursorJitter, theme, uiStyle
     }
 
     init() {}
@@ -38,6 +40,7 @@ struct Config: Codable {
         self.pressDurationMs = try container.decodeIfPresent(Double.self, forKey: .pressDurationMs) ?? 35
         self.cursorJitter = try container.decodeIfPresent(Bool.self, forKey: .cursorJitter) ?? false
         self.theme = try container.decodeIfPresent(Theme.self, forKey: .theme) ?? .system
+        self.uiStyle = try container.decodeIfPresent(UIStyle.self, forKey: .uiStyle) ?? .apple
     }
 }
 

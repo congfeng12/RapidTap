@@ -258,6 +258,20 @@ TCC 以代码签名的「指定要求」识别应用：
 
 > 说明：更新检查依赖仓库为公开状态；若仓库改为私有，未携带令牌的请求会失败。
 
+### 5.11 双界面风格
+
+同一份业务逻辑上并存两套 UI，通过 `Config.uiStyle`（`apple` / `island`）切换：
+
+| 环节 | 做法 |
+|------|------|
+| 代码隔离 | 两套视图控制器与组件各自命名空间：`MainViewController` / `SettingsViewController` + `UIComponents.swift`（Apple），`IslandMainViewController` / `IslandSettingsViewController` + `IslandUIComponents.swift`（动森），公共类型加 `Island` 前缀避免冲突 |
+| 入口选择 | `AppDelegate.makeRootViewController()` 按 `uiStyle` 返回对应根控制器，两者都实现 `RootViewSizing`（提供内容高度） |
+| 切换方式 | 设置面板下拉框写入配置后关闭 sheet，并广播 `.rapidTapStyleChanged`；`AppDelegate` 收到后原地替换 `contentViewController`、按新内容高度重设窗口尺寸（保持左上角不动）、同步背景色与外观 |
+| 外观策略 | 动森风强制 `aqua`（该设计语言只有浅色）；切回 Apple 风时重新应用用户的浅色 / 深色 / 跟随系统设置 |
+| 资源 | 动森风内置 Nunito 可变字体（`Resources/Fonts/Nunito.ttf`，构建时拷入包内），中文回退系统 PingFang SC |
+
+> 说明：动森风是对 animal-island-ui 设计语言的 AppKit 复刻（MIT 许可），未直接使用其 React 组件；图标使用 SF Symbols 而非其 naive-icons。
+
 ## 6. 验证记录
 
 | 用例 | 方法 | 结果 |
@@ -274,6 +288,8 @@ TCC 以代码签名的「指定要求」识别应用：
 | 总开关（开启） | 打开开关后按住 R 0.8 秒 | 状态变「连点中」，按 30 次/秒频率点击 23 次，松开即停 |
 | 启动默认状态 | 重启应用 | 开关默认关闭，触发键不被拦截 |
 | 设置面板功能 | AX 操作录制、模式、主题，再关闭面板 | 录制 Option 写入 58；切换模式 `holdToClick=false`；主题 dark/system 正确落盘，关闭面板后主界面跟随 |
+| 双风格切换 | 在 Apple 风格设置里下拉选择「动森风格」 | 配置写入 `"uiStyle":"island"`，窗口原地重建为动森风（高度 424→495），标题与图表同步 |
+| 反向切换 | 在动森风设置里选择「Apple 风格」 | 配置回到 `"uiStyle":"apple"`，界面重建回系统风（高度 495→424），主题设置重新生效 |
 | 参数持久化 | 调整频率/模式/坐标抖动后重启 | 全部保持（6 次/秒、按住模式、坐标抖动开启） |
 | 窗口布局 | 多屏（内置 2056×1329 + MateView 2560×1707） | 在鼠标所在屏居中，520pt 宽，无约束警告 |
 | 授权持久化 | 连续两次 `./build.sh` 后比对 `codesign -d -r-` | 指定要求完全一致；重启应用仍显示「已授权」 |

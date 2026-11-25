@@ -8,10 +8,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         self.buildMainMenu()
 
-        // 先应用保存的主题，再创建窗口，避免启动时闪一下另一种外观
-        Settings.shared.current.theme.apply()
+        // 岛风需要内置字体；Apple 风格下注册了也不影响
+        IslandFont.registerBundledFonts()
+        self.applyAppearance()
 
-        let controller = MainViewController()
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(self.styleChanged),
+                                               name: .rapidTapStyleChanged,
+                                               object: nil)
+
+        let controller = self.makeRootViewController()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -23,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.backgroundColor = .underPageBackgroundColor
+        window.backgroundColor = self.rootBackgroundColor
         window.contentViewController = controller
 
         // 先完成一次布局拿到内容高度，再按鼠标所在显示器居中，避免窗口跳动
@@ -48,6 +54,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         ClickEngine.shared.stop()
         HotKeyMonitor.shared.stop()
+    }
+
+    /// 根据配置创建对应风格的根界面
+    private func makeRootViewController() -> NSViewController & RootViewSizing {
+        switch Settings.shared.current.uiStyle {
+        case .island:
+            return IslandMainViewController()
+        case .apple:
+            return MainViewController()
+        }
+    }
+
+    /// 根窗口背景色
+    private var rootBackgroundColor: NSColor {
+        return Settings.shared.current.uiStyle == .island ? Island.bg : .underPageBackgroundColor
+    }
+
+    /// 应用外观：岛风强制浅色；Apple 风格使用用户选择的主题
+    private func applyAppearance() {
+        if Settings.shared.current.uiStyle == .island {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        } else {
+            Settings.shared.current.theme.apply()
+        }
+    }
+
+    /// 设置里切换界面风格后，原地重建根界面并保持窗口位置
+    @objc private func styleChanged() {
+        guard let window = self.window else { return }
+
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        let controller = self.makeRootViewController()
+        controller.view.layoutSubtreeIfNeeded()
+
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 520, height: controller.preferredHeight))
+        window.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - window.frame.height))
+        window.backgroundColor = self.rootBackgroundColor
+        self.applyAppearance()
     }
 
     /// 把窗口放到当前鼠标所在的显示器中央（多屏环境下更符合直觉）

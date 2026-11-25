@@ -2,7 +2,7 @@ import Cocoa
 import ApplicationServices
 
 /// 主界面：只保留连点设置与启动区域，其余内容收进「设置」面板
-final class MainViewController: NSViewController {
+final class MainViewController: NSViewController, RootViewSizing {
 
     private static let contentTopInset: CGFloat = 38
     private static let contentBottomInset: CGFloat = 20

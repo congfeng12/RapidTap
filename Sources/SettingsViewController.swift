@@ -40,6 +40,7 @@ final class SettingsViewController: NSViewController {
                                                   trackingMode: .selectOne,
                                                   target: nil,
                                                   action: nil)
+    private let stylePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let launchAtLoginSwitch = NSSwitch()
     private let launchAtLoginSubtitle = NSTextField(labelWithString: "登录后自动打开")
     private let updateSubtitleLabel = NSTextField(labelWithString: "")
@@ -221,6 +222,15 @@ final class SettingsViewController: NSViewController {
     }
 
     private func makeGeneralCard() -> NSView {
+        self.stylePopup.addItems(withTitles: [UIStyle.apple.displayName, UIStyle.island.displayName])
+        self.stylePopup.controlSize = .regular
+        self.stylePopup.bezelStyle = .rounded
+        self.stylePopup.setAccessibilityLabel("界面风格")
+        let styleRow = UIBuilder.makeSettingRow(symbol: "paintpalette",
+                                                title: "界面风格",
+                                                subtitle: "切换后立即生效",
+                                                trailing: [self.stylePopup])
+
         self.themeControl.controlSize = .regular
         self.themeControl.setAccessibilityLabel("外观主题")
         let themeRow = UIBuilder.makeSettingRow(symbol: "circle.lefthalf.filled",
@@ -246,7 +256,7 @@ final class SettingsViewController: NSViewController {
                                                  subtitleLabel: self.updateSubtitleLabel,
                                                  trailing: [self.updateButton])
 
-        return UIBuilder.makeCard(rows: [themeRow, loginRow, updateRow])
+        return UIBuilder.makeCard(rows: [styleRow, themeRow, loginRow, updateRow])
     }
 
     private func makeFooter() -> NSView {
@@ -287,6 +297,9 @@ final class SettingsViewController: NSViewController {
 
         self.themeControl.target = self
         self.themeControl.action = #selector(self.themeChanged)
+
+        self.stylePopup.target = self
+        self.stylePopup.action = #selector(self.stylePopupChanged)
 
         self.launchAtLoginSwitch.target = self
         self.launchAtLoginSwitch.action = #selector(self.launchAtLoginChanged)
@@ -346,6 +359,17 @@ final class SettingsViewController: NSViewController {
         guard !self.isSyncingUI else { return }
         let hold = self.modeControl.selectedSegment == 0
         self.settings.update { $0.holdToClick = hold }
+    }
+
+    @objc private func stylePopupChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+
+        let style: UIStyle = self.stylePopup.indexOfSelectedItem == 1 ? .island : .apple
+        self.settings.update { $0.uiStyle = style }
+        self.dismiss(self)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .rapidTapStyleChanged, object: nil)
+        }
     }
 
     @objc private func themeChanged(_ sender: Any) {
@@ -416,6 +440,7 @@ final class SettingsViewController: NSViewController {
         let config = self.settings.current
         self.selectMode(hold: config.holdToClick)
         self.selectTheme(config.theme)
+        self.stylePopup.selectItem(at: config.uiStyle == .island ? 1 : 0)
         self.launchAtLoginSwitch.state = LaunchAtLogin.isEnabled ? .on : .off
     }
 

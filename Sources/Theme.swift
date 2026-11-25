@@ -23,3 +23,27 @@ enum Theme: String, Codable, CaseIterable {
         NSApp.appearance = self.appearance
     }
 }
+
+
+/// 界面风格
+enum UIStyle: String, Codable, CaseIterable {
+    case apple
+    case island
+
+    var displayName: String {
+        switch self {
+        case .apple: return "Apple 风格"
+        case .island: return "动森风格"
+        }
+    }
+}
+
+extension Notification.Name {
+    /// 用户在设置里切换界面风格
+    static let rapidTapStyleChanged = Notification.Name("rapidTapStyleChanged")
+}
+
+/// 主窗口根视图控制器需要提供内容高度，便于切换风格后重新定尺寸
+protocol RootViewSizing: AnyObject {
+    var preferredHeight: CGFloat { get }
+}

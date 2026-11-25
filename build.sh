@@ -22,6 +22,8 @@ echo "==> 准备应用包结构"
 mkdir -p "${BUNDLE}/Contents/MacOS" "${BUNDLE}/Contents/Resources"
 cp Resources/Info.plist "${BUNDLE}/Contents/Info.plist"
 cp Resources/AppIcon.icns "${BUNDLE}/Contents/Resources/AppIcon.icns"
+mkdir -p "${BUNDLE}/Contents/Resources/Fonts"
+cp Resources/Fonts/Nunito.ttf "${BUNDLE}/Contents/Resources/Fonts/Nunito.ttf"
 
 echo "==> 编译（${ARCH} / macOS ${MIN_MACOS}+）"
 xcrun swiftc \

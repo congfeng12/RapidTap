@@ -8,11 +8,12 @@
 - 目标最低系统：macOS 13.0
 
 <p align="center">
-  <img src="md/images/main-light.png" width="44%" alt="主界面（浅色）">
-  <img src="md/images/main-dark.png" width="44%" alt="主界面（深色）">
+  <img src="md/images/main-apple.png" width="44%" alt="Apple 风格主界面">
+  <img src="md/images/main-island.png" width="44%" alt="动森风格主界面">
 </p>
 <p align="center">
-  <img src="md/images/settings.png" width="44%" alt="设置面板">
+  <img src="md/images/settings-apple.png" width="44%" alt="Apple 风格设置面板">
+  <img src="md/images/settings-island.png" width="44%" alt="动森风格设置面板">
 </p>
 
 ---
@@ -44,7 +45,8 @@ cd RapidTap
 | 拟人化随机 | 间隔抖动（0 ~ 45%）+ 按压时长随机 + 约 1.4% 概率插入长停顿 + 启动随机延迟 |
 | 坐标微抖动 | 可选，每次点击落点偏移 ±1.2 像素 |
 | 事件源 | 使用 `hidSystemState`（HID 事件源），兼容性优于普通合成事件 |
-| 外观主题 | 浅色 / 深色 / 跟随系统，切换立即生效并持久化 |
+| 界面风格 | **Apple 系统风 / 动森风**两种界面，设置里下拉切换，立即重建界面并持久化 |
+| 外观主题 | Apple 风格下可选浅色 / 深色 / 跟随系统，切换立即生效并持久化 |
 | 开机自启动 | 「通用」分组里的开关，走系统登录项（`SMAppService`），可在系统设置中撤销 |
 | 自动更新 | 启动时静默检查 GitHub Releases，发现新版本可一键下载安装并自动重启；也可随时手动检查 |
 | 配置持久化 | 触发键、频率、模式、拟人化、坐标抖动、主题等**每次改动立即原子写入**配置文件，强杀进程也不丢 |
@@ -65,6 +67,13 @@ cd RapidTap
 - 触发按键（含 ⌘⌥⌃⇧ / Caps Lock / Fn）与触发模式；
 - 主题（浅色 / 深色 / 跟随系统）、开机自启动、软件更新；
 - 风险提示。
+
+**两套界面风格**（设置 → 通用 → 界面风格，下拉切换，立即生效）：
+
+| 风格 | 特点 |
+|------|------|
+| **Apple 系统风** | 系统设置式分组卡片，跟随浅色 / 深色 / 跟随系统与系统强调色 |
+| **动森风** | 复刻 [animal-island-ui](https://github.com/guokaigdg/animal-island-ui) 的设计语言：奶油底 `#F8F8F0`、暖棕文字 `#794F27`、薄荷青主色 `#19C8B9`、20pt 圆角卡片、2px 虚线分隔、胶囊按钮与 3D 底影、52×28 双描边开关，内置 Nunito 字体。仅提供浅色 |
 
 细节：
 - 灰底（`underPageBackgroundColor`）+ 白色圆角卡片，自动适配深色模式与系统强调色；
@@ -240,6 +249,7 @@ RapidTap/
 
 ## 版本历史
 
+- **v1.4.0**（2026-11-25）：新增双界面风格 —— 设置里可下拉切换 Apple 系统风 / 动森风，立即生效；动森风复刻 animal-island-ui 的配色、圆角、虚线分隔与立体控件。
 - **v1.3.0**（2026-11-06）：新增连点器总开关（默认关闭，关闭时不拦截触发键）；主界面改为顶部控制卡，状态更醒目。
 - **v1.2.0**（2026-11-06）：界面精简 —— 主界面只保留连点设置与启动区域，权限、触发、主题、自启动、更新与风险提示收进设置面板。
 - **v1.1.0**（2026-11-06）：新增自动更新 —— 启动静默检查 GitHub Releases，支持一键下载安装并自动重启。

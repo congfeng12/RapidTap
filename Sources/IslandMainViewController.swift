@@ -1,0 +1,535 @@
+import Cocoa
+import ApplicationServices
+
+/// 主界面：只保留连点设置与启动区域，其余内容收进「设置」面板
+final class IslandMainViewController: NSViewController, RootViewSizing {
+
+    private static let contentTopInset: CGFloat = 38
+    private static let contentBottomInset: CGFloat = 20
+
+    private let settings = Settings.shared
+    private let engine = ClickEngine.shared
+    private let monitor = HotKeyMonitor.shared
+
+    private let contentStack = NSStackView()
+    private let settingsButton = IslandButton(title: "设置", target: nil, action: nil)
+
+    // 权限横幅（仅未授权时显示）
+    private let permissionCard = IslandCardView()
+    private let permissionBadge = IslandSymbolBadgeView(symbolName: "exclamationmark.shield.fill",
+                                                  tint: .systemOrange,
+                                                  side: 24)
+    private let permissionLabel = NSTextField(labelWithString: "未授权：无法拦截按键和模拟点击")
+    private let permissionButton = IslandButton(title: "去授权", target: nil, action: nil)
+
+    // 更新横幅（仅有新版本时显示）
+    private let updateCard = IslandCardView()
+    private let updateLabel = NSTextField(labelWithString: "")
+    private let updateButton = IslandButton(title: "查看", target: nil, action: nil)
+
+    // 连点设置
+    private let cpsValueLabel = NSTextField(labelWithString: "")
+    private let cpsSubtitleLabel = NSTextField(labelWithString: "")
+    private let cpsSlider = IslandSlider(value: Config().clicksPerSecond, minValue: 1, maxValue: 60, target: nil, action: nil)
+    private let humanizeSwitch = IslandSwitch()
+    private let jitterValueLabel = NSTextField(labelWithString: "")
+    private let jitterSlider = IslandSlider(value: Config().jitterPercent, minValue: 0, maxValue: 45, target: nil, action: nil)
+    private let cursorJitterSwitch = IslandSwitch()
+    private var jitterBlockView: NSView?
+
+    // 顶部控制卡
+    private let controlBadge = IslandSymbolBadgeView(symbolName: "power",
+                                               tint: .tertiaryLabelColor,
+                                               side: 40)
+    private let controlTitleLabel = NSTextField(labelWithString: "连点器已关闭")
+    private let controlSubtitleLabel = NSTextField(labelWithString: "")
+    private let enableSwitch = IslandSwitch()
+
+    private var uiTimer: Timer?
+    private var isSyncingUI = false
+    private var didAutoCheckUpdate = false
+    private var isSettingsPresented = false
+
+    // MARK: - 生命周期
+
+    override func loadView() {
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: IslandConstants.windowWidth, height: 560))
+        root.wantsLayer = true
+        self.view = root
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        self.buildLayout()
+        self.bindActions()
+        self.bindMonitor()
+        self.refreshFromSettings()
+        self.refreshRuntime()
+        self.refreshPermission()
+        self.refreshUpdateBanner()
+
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(self.updateStateChanged),
+                                               name: UpdateManager.stateDidChange,
+                                               object: nil)
+
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            self?.refreshRuntime()
+            self?.refreshPermission()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.uiTimer = timer
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        self.refreshFromSettings()
+        self.refreshRuntime()
+        self.refreshPermission()
+        self.refreshUpdateBanner()
+
+        // 启动后静默检查一次更新
+        guard !self.didAutoCheckUpdate else { return }
+        self.didAutoCheckUpdate = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            UpdateManager.shared.autoCheckIfNeeded()
+        }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard let window = self.view.window, let contentView = window.contentView else { return }
+
+        let desired = self.preferredHeight
+        guard abs(contentView.frame.height - desired) > 0.5 else { return }
+
+        // 保持窗口左上角不动地调整高度，避免每次布局都跳动
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        window.setContentSize(NSSize(width: IslandConstants.windowWidth, height: desired))
+        window.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - window.frame.height))
+    }
+
+    /// 内容理想高度（含上下留白），由 AppDelegate 用于初始化窗口尺寸
+    var preferredHeight: CGFloat {
+        let height = self.contentStack.frame.height
+        guard height > 1 else { return 420 }
+        return height + Self.contentTopInset + Self.contentBottomInset
+    }
+
+    deinit {
+        self.uiTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: - 布局
+
+    private func buildLayout() {
+        let root = self.contentStack
+        root.orientation = .vertical
+        root.alignment = .leading
+        root.spacing = 14
+        root.translatesAutoresizingMaskIntoConstraints = false
+        self.view.addSubview(root)
+
+        NSLayoutConstraint.activate([
+            root.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: IslandConstants.contentInset),
+            root.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -IslandConstants.contentInset),
+            root.topAnchor.constraint(equalTo: self.view.topAnchor, constant: Self.contentTopInset),
+            root.bottomAnchor.constraint(lessThanOrEqualTo: self.view.bottomAnchor,
+                                         constant: -Self.contentBottomInset),
+            root.widthAnchor.constraint(equalToConstant: IslandConstants.windowWidth - IslandConstants.contentInset * 2)
+        ])
+
+        IslandBuilder.addFullWidth(self.makeHeader(), to: root)
+        IslandBuilder.addFullWidth(self.makePermissionBanner(), to: root)
+        IslandBuilder.addFullWidth(self.makeUpdateBanner(), to: root)
+        IslandBuilder.addFullWidth(self.makeControlCard(), to: root)
+        IslandBuilder.addFullWidth(self.makeClickCard(), to: root)
+    }
+
+    private func makeHeader() -> NSView {
+        let badge = IslandSymbolBadgeView(symbolName: "cursorarrow.click.2",
+                                    tint: Island.primary,
+                                    side: 36)
+
+        let title = NSTextField(labelWithString: "RapidTap")
+        title.font = Island.font(20, 700)
+        title.textColor = Island.text
+
+        let subtitle = NSTextField(labelWithString: "全局触发键 · 鼠标左键连点 · 拟人化节奏")
+        subtitle.font = Island.font(11, 500)
+        subtitle.textColor = Island.secondaryText
+
+        let titles = NSStackView(views: [title, subtitle])
+        titles.orientation = .vertical
+        titles.alignment = .leading
+        titles.spacing = 1
+
+        self.settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        self.settingsButton.imagePosition = .imageLeading
+        self.settingsButton.bezelStyle = .rounded
+        self.settingsButton.controlSize = .regular
+        self.settingsButton.setAccessibilityLabel("打开设置")
+
+        let row = NSStackView(views: [badge, titles, IslandBuilder.makeSpacer(), self.settingsButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        return row
+    }
+
+    private func makePermissionBanner() -> NSView {
+        self.permissionLabel.font = Island.font(12, 500)
+        self.permissionLabel.textColor = Island.text
+        self.permissionLabel.lineBreakMode = .byTruncatingTail
+
+        self.permissionButton.controlSize = .small
+        self.permissionButton.bezelStyle = .rounded
+
+        let row = NSStackView(views: [self.permissionBadge,
+                                      self.permissionLabel,
+                                      IslandBuilder.makeSpacer(),
+                                      self.permissionButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        self.permissionCard.translatesAutoresizingMaskIntoConstraints = false
+        self.permissionCard.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: self.permissionCard.leadingAnchor, constant: IslandConstants.cardInset),
+            row.trailingAnchor.constraint(equalTo: self.permissionCard.trailingAnchor, constant: -IslandConstants.cardInset),
+            row.topAnchor.constraint(equalTo: self.permissionCard.topAnchor, constant: 10),
+            row.bottomAnchor.constraint(equalTo: self.permissionCard.bottomAnchor, constant: -10)
+        ])
+        self.permissionCard.isHidden = true
+        return self.permissionCard
+    }
+
+    private func makeUpdateBanner() -> NSView {
+        self.updateLabel.font = Island.font(12, 500)
+        self.updateLabel.textColor = Island.text
+
+        self.updateButton.controlSize = .small
+        self.updateButton.bezelStyle = .rounded
+
+        var views: [NSView] = []
+        if let icon = IslandBuilder.makeRowIcon("arrow.triangle.2.circlepath") {
+            views.append(icon)
+        }
+        views.append(contentsOf: [self.updateLabel, IslandBuilder.makeSpacer(), self.updateButton])
+
+        let row = NSStackView(views: views)
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        self.updateCard.translatesAutoresizingMaskIntoConstraints = false
+        self.updateCard.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: self.updateCard.leadingAnchor, constant: IslandConstants.cardInset),
+            row.trailingAnchor.constraint(equalTo: self.updateCard.trailingAnchor, constant: -IslandConstants.cardInset),
+            row.topAnchor.constraint(equalTo: self.updateCard.topAnchor, constant: 10),
+            row.bottomAnchor.constraint(equalTo: self.updateCard.bottomAnchor, constant: -10)
+        ])
+        self.updateCard.isHidden = true
+        return self.updateCard
+    }
+
+    private func makeClickCard() -> NSView {
+        self.cpsValueLabel.font = Island.mono(13, 600)
+        self.cpsValueLabel.textColor = Island.secondaryText
+        self.cpsSubtitleLabel.font = Island.font(11, 500)
+        self.cpsSubtitleLabel.textColor = Island.secondaryText
+        self.cpsSlider.setContentHuggingPriority(.init(1), for: .horizontal)
+        self.cpsSlider.setAccessibilityLabel("点击频率")
+
+        let cpsRow = IslandBuilder.makeSettingRow(symbol: "speedometer",
+                                              title: "点击频率",
+                                              subtitleLabel: self.cpsSubtitleLabel,
+                                              trailing: [self.cpsValueLabel])
+        let cpsBlock = IslandBuilder.makeSliderBlock(slider: self.cpsSlider, header: cpsRow)
+
+        self.humanizeSwitch.controlSize = .regular
+        self.humanizeSwitch.setAccessibilityLabel("拟人化随机节奏")
+        let humanizeRow = IslandBuilder.makeSettingRow(symbol: "wand.and.stars",
+                                                   title: "拟人化随机节奏",
+                                                   subtitle: "间隔抖动 · 按压时长随机 · 偶发停顿",
+                                                   trailing: [self.humanizeSwitch])
+
+        self.jitterValueLabel.font = Island.mono(13, 600)
+        self.jitterValueLabel.textColor = Island.secondaryText
+        self.jitterSlider.setContentHuggingPriority(.init(1), for: .horizontal)
+        self.jitterSlider.setAccessibilityLabel("间隔随机幅度")
+
+        let jitterRow = IslandBuilder.makeSettingRow(symbol: "slider.horizontal.3",
+                                                 title: "间隔随机幅度",
+                                                 trailing: [self.jitterValueLabel])
+        let jitterBlock = IslandBuilder.makeSliderBlock(slider: self.jitterSlider, header: jitterRow)
+        self.jitterBlockView = jitterBlock
+
+        self.cursorJitterSwitch.controlSize = .regular
+        self.cursorJitterSwitch.setAccessibilityLabel("点击坐标微抖动")
+        let cursorRow = IslandBuilder.makeSettingRow(symbol: "cursorarrow",
+                                                 title: "点击坐标微抖动",
+                                                 subtitle: "每次落点偏移 ±1.2 像素",
+                                                 trailing: [self.cursorJitterSwitch])
+
+        return IslandBuilder.makeCard(rows: [cpsBlock, humanizeRow, jitterBlock, cursorRow])
+    }
+
+    /// 顶部控制卡：连点器总开关与实时状态
+    private func makeControlCard() -> NSView {
+        self.controlTitleLabel.font = Island.font(16, 700)
+        self.controlTitleLabel.textColor = Island.text
+
+        self.controlSubtitleLabel.font = Island.font(11, 500)
+        self.controlSubtitleLabel.textColor = Island.secondaryText
+
+        let titles = NSStackView(views: [self.controlTitleLabel, self.controlSubtitleLabel])
+        titles.orientation = .vertical
+        titles.alignment = .leading
+        titles.spacing = 2
+
+        self.enableSwitch.controlSize = .large
+        self.enableSwitch.setAccessibilityLabel("启用连点器")
+
+        let row = NSStackView(views: [self.controlBadge,
+                                      titles,
+                                      IslandBuilder.makeSpacer(),
+                                      self.enableSwitch])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        let card = IslandCardView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14)
+        ])
+        return card
+    }
+
+    // MARK: - 事件绑定
+
+    private func bindActions() {
+        self.settingsButton.target = self
+        self.settingsButton.action = #selector(self.openSettings)
+
+        self.permissionButton.target = self
+        self.permissionButton.action = #selector(self.openPermissionSettings)
+
+        self.updateButton.target = self
+        self.updateButton.action = #selector(self.openSettings)
+
+        self.cpsSlider.target = self
+        self.cpsSlider.action = #selector(self.cpsChanged)
+        self.cpsSlider.isContinuous = true
+
+        self.humanizeSwitch.target = self
+        self.humanizeSwitch.action = #selector(self.humanizeChanged)
+
+        self.jitterSlider.target = self
+        self.jitterSlider.action = #selector(self.jitterChanged)
+        self.jitterSlider.isContinuous = true
+
+        self.cursorJitterSwitch.target = self
+        self.cursorJitterSwitch.action = #selector(self.cursorJitterChanged)
+
+        self.enableSwitch.target = self
+        self.enableSwitch.action = #selector(self.enableChanged)
+    }
+
+    private func bindMonitor() {
+        self.monitor.onTriggerDown = { [weak self] in
+            self?.triggerKeyPressed()
+        }
+        self.monitor.onTriggerUp = { [weak self] in
+            self?.triggerKeyReleased()
+        }
+    }
+
+    // MARK: - 用户操作
+
+    @objc private func openSettings(_ sender: Any) {
+        guard !self.isSettingsPresented else { return }
+        self.isSettingsPresented = true
+
+        let controller = IslandSettingsViewController()
+        controller.onDismiss = { [weak self] in
+            guard let self = self else { return }
+            self.isSettingsPresented = false
+            self.refreshFromSettings()
+            self.refreshRuntime()
+            self.refreshPermission()
+        }
+        _ = controller.view   // 触发 loadView（macOS 13 没有 loadViewIfNeeded）
+        controller.view.layoutSubtreeIfNeeded()
+        let size = controller.preferredSize
+        controller.view.frame = NSRect(origin: .zero, size: size)
+        controller.preferredContentSize = size
+        self.presentAsSheet(controller)
+    }
+
+    @objc private func openPermissionSettings(_ sender: Any) {
+        self.requestPermissionPrompt()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+        self.refreshPermission()
+    }
+
+    @objc private func cpsChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+        let value = self.cpsSlider.doubleValue.rounded()
+        self.settings.update { $0.clicksPerSecond = value }
+        self.refreshDerivedLabels()
+    }
+
+    @objc private func humanizeChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+        let enabled = self.humanizeSwitch.state == .on
+        self.settings.update { $0.humanize = enabled }
+        self.refreshDerivedLabels()
+    }
+
+    @objc private func jitterChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+        let value = self.jitterSlider.doubleValue.rounded()
+        self.settings.update { $0.jitterPercent = value }
+        self.refreshDerivedLabels()
+    }
+
+    @objc private func cursorJitterChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+        let enabled = self.cursorJitterSwitch.state == .on
+        self.settings.update { $0.cursorJitter = enabled }
+    }
+
+    @objc private func enableChanged(_ sender: Any) {
+        guard !self.isSyncingUI else { return }
+
+        let enabled = self.enableSwitch.state == .on
+        self.monitor.isEnabled = enabled
+        if enabled && !self.monitor.isActive {
+            _ = self.monitor.start()
+        }
+        if !enabled {
+            self.engine.stop()
+        }
+        self.refreshRuntime()
+    }
+
+    // MARK: - 触发键处理
+
+    private func triggerKeyPressed() {
+        let config = self.settings.current
+        if config.holdToClick {
+            if !self.engine.start() {
+                NSSound.beep()
+                self.refreshPermission()
+            }
+        } else if self.engine.isRunning {
+            self.engine.stop()
+        } else if !self.engine.start() {
+            NSSound.beep()
+            self.refreshPermission()
+        }
+        self.refreshRuntime()
+    }
+
+    private func triggerKeyReleased() {
+        if self.settings.current.holdToClick {
+            self.engine.stop()
+            self.refreshRuntime()
+        }
+    }
+
+    // MARK: - 界面刷新
+
+    @objc private func updateStateChanged() {
+        self.refreshUpdateBanner()
+    }
+
+    private func refreshFromSettings() {
+        self.isSyncingUI = true
+        defer { self.isSyncingUI = false }
+
+        let config = self.settings.current
+        self.cpsSlider.doubleValue = config.clicksPerSecond
+        self.humanizeSwitch.state = config.humanize ? .on : .off
+        self.jitterSlider.doubleValue = config.jitterPercent
+        self.cursorJitterSwitch.state = config.cursorJitter ? .on : .off
+        self.refreshDerivedLabels()
+    }
+
+    private func refreshDerivedLabels() {
+        let config = self.settings.current
+        let interval = 1000.0 / max(1.0, config.clicksPerSecond)
+
+        self.cpsValueLabel.stringValue = String(format: "%.0f 次/秒", config.clicksPerSecond)
+        self.cpsSubtitleLabel.stringValue = String(format: "间隔 %.0f 毫秒", interval)
+        self.jitterValueLabel.stringValue = String(format: "±%.0f%%", config.jitterPercent)
+
+        self.jitterBlockView?.alphaValue = config.humanize ? 1.0 : 0.4
+        self.jitterSlider.isEnabled = config.humanize
+    }
+
+    private func refreshPermission() {
+        let trusted = AXIsProcessTrusted()
+        self.permissionCard.isHidden = trusted
+        if trusted {
+            self.settings.rememberAuthorized()
+            if !self.monitor.isActive {
+                _ = self.monitor.start()
+            }
+        }
+    }
+
+    private func refreshUpdateBanner() {
+        if let info = UpdateManager.shared.availableUpdate {
+            self.updateLabel.stringValue = "发现新版本 \(info.tag)"
+            self.updateCard.isHidden = false
+        } else {
+            self.updateCard.isHidden = true
+        }
+    }
+
+    private func refreshRuntime() {
+        let enabled = self.monitor.isEnabled
+        let running = self.engine.isRunning
+        let count = self.engine.clickCount
+        let keyName = KeyNames.name(for: self.settings.current.triggerKeyCode)
+
+        if !enabled {
+            self.controlTitleLabel.stringValue = "连点器已关闭"
+            self.controlSubtitleLabel.stringValue = "触发键 \(keyName) · 关闭时不会被拦截"
+            self.controlBadge.tint = Island.error
+        } else if running {
+            self.controlTitleLabel.stringValue = "连点中"
+            self.controlSubtitleLabel.stringValue = "触发键 \(keyName) · 已点击 \(count) 次"
+            self.controlBadge.tint = Island.success
+        } else {
+            self.controlTitleLabel.stringValue = "连点器已开启"
+            self.controlSubtitleLabel.stringValue = "触发键 \(keyName) · 已点击 \(count) 次"
+            self.controlBadge.tint = Island.success
+        }
+
+        self.isSyncingUI = true
+        self.enableSwitch.state = enabled ? .on : .off
+        self.isSyncingUI = false
+    }
+
+    private func requestPermissionPrompt() {
+        // 用字面量键触发系统授权弹窗，避免不同 SDK 对 CFString 全局量的桥接差异
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+}
